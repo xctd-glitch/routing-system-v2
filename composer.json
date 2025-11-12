@@ -33,17 +33,14 @@
     "sort-packages": true
   },
   "scripts": {
-    "phpstan": "vendor/bin/phpstan analyse --no-progress --level=max src tests",
-    "cs": "vendor/bin/phpcs --standard=phpcs.xml src tests",
-    "cs-fix:dry": "vendor/bin/php-cs-fixer fix --dry-run --diff",
-    "test": "vendor/bin/phpunit --fail-on-warning --display-warnings --testdox",
-    "quality": [
-      "@cs",
-      "@cs-fix:dry",
-      "@phpstan",
-      "@test"
-    ]
-  },
+"lint": "vendor/bin/phpcs --standard=PSR12 src tests",
+"stan": "vendor/bin/phpstan analyse --level=max",
+"test": "vendor/bin/phpunit --fail-on-warning",
+"quality": "composer lint && composer stan && composer test",
+"build": "npm run build",
+"ci": "composer install --no-progress --ansi && npm ci && npm run build && composer quality"
+},
   "minimum-stability": "stable",
   "prefer-stable": true
 }
+
