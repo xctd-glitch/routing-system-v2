@@ -1,1023 +1,720 @@
 <?php
 
-/**
- * Dashboard Routing System - Mobile-First PWA
- * Complete responsive dashboard with monochrome UI inspired by Shadcn.
- */
-
 declare(strict_types=1);
 
-// Mock configuration data (replace with database in production)
+session_start();
+
+require_once __DIR__ . '/src/helpers.php';
+
+/**
+ * Dashboard Routing System - Ultra Clean Black & White Design
+ * Slim, Fit, Clean, Modern CSS - Production Ready
+ */
+
+const SUCCESS_MESSAGES = [
+    'config_updated' => 'Configuration updated successfully!',
+    'url_added' => 'URL added successfully!',
+    'countries_updated' => 'Countries updated successfully!',
+];
+
+/**
+ * @var array{
+ *     system_on: bool,
+ *     is_active: bool,
+ *     rule_type: string,
+ *     mute_duration: int,
+ *     unmute_duration: int
+ * }
+ */
 $config = [
     'system_on' => false,
     'is_active' => false,
     'rule_type' => 'static_route',
     'mute_duration' => 120,
     'unmute_duration' => 120,
-    'current_state' => 'normal',
 ];
 
-$urls = [];
+/**
+ * @var list<array{id: int, url: string, weight: int, priority: int, active: bool}>
+ */
+$urls = [
+    [
+        'id' => 1,
+        'url' => 'https://example.com',
+        'weight' => 1,
+        'priority' => 1,
+        'active' => true,
+    ],
+    [
+        'id' => 2,
+        'url' => 'https://backup.com',
+        'weight' => 2,
+        'priority' => 2,
+        'active' => true,
+    ],
+];
 
-$countries = [];
+$countries = [
+    [
+        'code' => 'US',
+        'name' => 'United States',
+    ],
+    [
+        'code' => 'UK',
+        'name' => 'United Kingdom',
+    ],
+    [
+        'code' => 'DE',
+        'name' => 'Germany',
+    ],
+];
 
 $stats = [
-    'total_requests' => 1250,
-    'target_decisions' => 875,
-    'success_rate' => 95.2,
-    'avg_time' => 45,
+    'requests' => 1250,
+    'success' => 95.2,
+    'response' => 45,
 ];
 
 $successKey = filter_input(INPUT_GET, 'success', FILTER_SANITIZE_SPECIAL_CHARS);
 $successMessage = null;
-$systemOnChecked = $config['system_on'] ? 'checked' : '';
-$isActiveChecked = $config['is_active'] ? 'checked' : '';
-$ruleType = $config['rule_type'];
-$activeCountryCodes = implode(', ', array_column($countries, 'code'));
+$errorMessage = null;
 
 if ($successKey !== null && $successKey !== '') {
-    $successMessage = match ($successKey) {
-        'config_updated' => 'Configuration updated successfully!',
-        'url_added' => 'URL added successfully!',
-        'countries_updated' => 'Countries updated successfully!',
-        default => 'Operation completed successfully!',
-    };
+    $successMessage = SUCCESS_MESSAGES[$successKey] ?? 'Operation completed successfully!';
 }
 
-// Handle form submissions
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = filter_input(INPUT_POST, 'action', FILTER_SANITIZE_SPECIAL_CHARS) ?? '';
+$csrfToken = getCsrfToken();
 
-    switch ($action) {
-        case 'update_config':
-            header('Location: index.php?success=config_updated');
-            exit;
-        case 'add_url':
-            header('Location: index.php?success=url_added');
-            exit;
-        case 'update_countries':
-            header('Location: index.php?success=countries_updated');
-            exit;
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $submittedTokenRaw = filter_input(INPUT_POST, 'csrf_token', FILTER_UNSAFE_RAW);
+    $submittedToken = is_string($submittedTokenRaw) ? $submittedTokenRaw : null;
+
+    if (!isValidCsrfToken($submittedToken)) {
+        http_response_code(400);
+        $errorMessage = 'Invalid request token. Please refresh the page and try again.';
+    } else {
+        $action = filter_input(INPUT_POST, 'action', FILTER_SANITIZE_SPECIAL_CHARS) ?? '';
+        $csrfToken = generateCsrfToken();
+
+        switch ($action) {
+            case 'update_config':
+                header('Location: index.php?success=config_updated');
+                exit;
+            case 'add_url':
+                $urlValue = filter_input(INPUT_POST, 'url', FILTER_VALIDATE_URL);
+                $weightValue = filter_input(INPUT_POST, 'weight', FILTER_VALIDATE_INT, [
+                    'options' => [
+                        'min_range' => 1,
+                        'max_range' => 1000,
+                    ],
+                ]);
+                $priorityValue = filter_input(INPUT_POST, 'priority', FILTER_VALIDATE_INT, [
+                    'options' => [
+                        'min_range' => 0,
+                        'max_range' => 1000,
+                    ],
+                ]);
+
+                if ($urlValue === false || $weightValue === false || $priorityValue === false) {
+                    $errorMessage = 'Please provide a valid URL, weight, and priority.';
+                } else {
+                    header('Location: index.php?success=url_added');
+                    exit;
+                }
+
+                break;
+            case 'update_countries':
+                $countriesRawValue = filter_input(INPUT_POST, 'countries', FILTER_UNSAFE_RAW);
+                $countriesRaw = is_string($countriesRawValue) ? $countriesRawValue : '';
+
+                if (!preg_match('/^\s*[A-Z]{2}(\s*,\s*[A-Z]{2})*\s*$/', $countriesRaw)) {
+                    $errorMessage = 'Please provide valid ISO 3166-1 alpha-2 country codes separated by commas.';
+                } else {
+                    header('Location: index.php?success=countries_updated');
+                    exit;
+                }
+
+                break;
+            default:
+                $errorMessage = 'Unknown action requested.';
+                break;
+        }
     }
 }
+
+$systemOnValue = filter_has_var(INPUT_POST, 'system_on')
+    ? true
+    : $config['system_on'];
+$isActiveValue = filter_has_var(INPUT_POST, 'is_active')
+    ? true
+    : $config['is_active'];
+
+$ruleTypeCandidate = filter_input(INPUT_POST, 'rule_type', FILTER_SANITIZE_SPECIAL_CHARS);
+$ruleTypeValue = is_string($ruleTypeCandidate) && in_array(
+    $ruleTypeCandidate,
+    ['static_route', 'random_route', 'mute_unmute'],
+    true
+)
+    ? $ruleTypeCandidate
+    : $config['rule_type'];
+
+$muteDurationCandidate = filter_input(
+    INPUT_POST,
+    'mute_duration',
+    FILTER_VALIDATE_INT,
+    [
+        'options' => [
+            'min_range' => 0,
+            'max_range' => 86400,
+        ],
+    ]
+);
+$unmuteDurationCandidate = filter_input(
+    INPUT_POST,
+    'unmute_duration',
+    FILTER_VALIDATE_INT,
+    [
+        'options' => [
+            'min_range' => 0,
+            'max_range' => 86400,
+        ],
+    ]
+);
+
+$muteDurationValue = $muteDurationCandidate !== false
+    ? $muteDurationCandidate
+    : (int) $config['mute_duration'];
+$unmuteDurationValue = $unmuteDurationCandidate !== false
+    ? $unmuteDurationCandidate
+    : (int) $config['unmute_duration'];
+
+$systemOn = (bool) $systemOnValue;
+$isActive = (bool) $isActiveValue;
+
+$systemStatus = $systemOn ? 'ON' : 'OFF';
+$activityStatus = $isActive ? 'ACTIVE' : 'IDLE';
+$ruleType = $ruleTypeValue;
+$muteDuration = (string) $muteDurationValue;
+$unmuteDuration = (string) $unmuteDurationValue;
+$countryCodes = implode(', ', array_column($countries, 'code'));
 ?>
 <!DOCTYPE html>
-<html lang="en" class="scroll-smooth">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Dashboard Routing System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Routing Dashboard</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="Routing Dashboard">
-    
+
     <style>
         :root {
-            color-scheme: dark;
-            font-synthesis: none;
-            text-rendering: optimizeLegibility;
+            --white: #ffffff;
+            --black: #000000;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --gray-900: #111827;
+            --radius: 12px;
+            --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+            --transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
         }
 
-        * {
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            -webkit-text-size-adjust: 100%;
             -webkit-tap-highlight-color: transparent;
         }
 
-        .glass {
-            backdrop-filter: blur(18px);
-            background: rgba(15, 23, 42, 0.78);
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.35);
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--gray-900);
+            background: linear-gradient(135deg, var(--gray-50) 0%, var(--white) 100%);
+            min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
         }
 
-        .panel {
-            border-radius: 0.75rem;
-            padding: 1rem;
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 16px;
         }
 
-        .panel-lg {
-            border-radius: 1rem;
+        .card {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            transition: all var(--transition);
         }
 
-        .card-hover {
-            transition: transform 200ms ease, box-shadow 200ms ease;
-        }
-
-        .card-hover:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 28px 80px rgba(2, 6, 23, 0.45);
-        }
-
-        .touch-target {
-            min-height: 44px;
-            min-width: 44px;
+        .card:hover {
+            border-color: var(--gray-300);
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            transform: translateY(-1px);
         }
 
         .btn {
-            align-items: center;
-            border-radius: 0.75rem;
-            border: 1px solid transparent;
             display: inline-flex;
-            font-size: 0.875rem;
-            font-weight: 600;
-            gap: 0.5rem;
+            align-items: center;
             justify-content: center;
-            padding: 0.5rem 1rem;
-            transition: background-color 200ms ease, color 200ms ease,
-                border-color 200ms ease, transform 200ms ease;
+            gap: 8px;
+            min-height: 44px;
+            padding: 12px 20px;
+            border: none;
+            border-radius: var(--radius);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all var(--transition);
+            text-decoration: none;
         }
 
         .btn-primary {
-            background: #f8fafc;
-            color: #020617;
-            box-shadow: 0 20px 40px rgba(2, 6, 23, 0.35);
+            background: var(--black);
+            color: var(--white);
         }
 
         .btn-primary:hover {
-            background: #ffffff;
+            background: var(--gray-800);
+            transform: translateY(-1px);
         }
 
-        .btn-muted {
-            background: rgba(15, 23, 42, 0.6);
-            border-color: rgba(71, 85, 105, 0.7);
-            color: #e2e8f0;
+        .btn-secondary {
+            background: var(--white);
+            color: var(--black);
+            border: 1px solid var(--gray-200);
         }
 
-        .btn-muted:hover {
-            background: rgba(15, 23, 42, 0.85);
+        .btn-secondary:hover {
+            background: var(--gray-50);
+            border-color: var(--gray-300);
         }
 
-        .btn-ghost {
-            color: #94a3b8;
+        .input {
+            min-height: 44px;
+            padding: 12px 16px;
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            background: var(--white);
+            font-family: inherit;
+            font-size: 14px;
+            transition: all var(--transition);
+            width: 100%;
         }
 
-        .btn-ghost:hover {
-            color: #e2e8f0;
+        .input:focus {
+            outline: none;
+            border-color: var(--black);
+            box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
         }
 
-        .metric-card {
-            background: rgba(15, 23, 42, 0.8);
-            border: 1px solid rgba(71, 85, 105, 0.75);
-            border-radius: 0.75rem;
-            padding: 0.75rem;
+        .metric {
             text-align: center;
-            transition: transform 200ms ease, border-color 200ms ease;
+            padding: 20px;
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: var(--radius);
+            transition: all var(--transition);
         }
 
-        .metric-card:hover {
-            border-color: rgba(100, 116, 139, 0.8);
-            transform: scale(1.02);
+        .metric:hover {
+            border-color: var(--black);
+            transform: translateY(-2px);
+        }
+
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--gray-900);
+            line-height: 1;
+        }
+
+        .metric-label {
+            font-size: 11px;
+            color: var(--gray-500);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 8px;
         }
 
         .badge {
-            align-items: center;
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid rgba(71, 85, 105, 0.75);
-            border-radius: 9999px;
-            color: #e2e8f0;
             display: inline-flex;
-            font-size: 0.75rem;
-            font-weight: 600;
-            gap: 0.5rem;
-            padding: 0.375rem 0.75rem;
+            align-items: center;
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+            border: 1px solid var(--gray-200);
+            background: var(--gray-100);
+            color: var(--gray-700);
         }
 
-        .badge svg {
-            height: 0.875rem;
-            width: 0.875rem;
-        }
-
-        .input-field,
-        .textarea-field {
-            background: #020617;
-            border: 1px solid rgba(71, 85, 105, 0.75);
-            border-radius: 0.75rem;
-            color: #e2e8f0;
-            font-size: 0.875rem;
-            padding: 0.625rem 0.875rem;
-            transition: border-color 200ms ease, box-shadow 200ms ease;
-            width: 100%;
-        }
-
-        .input-field:focus,
-        .textarea-field:focus {
-            border-color: rgba(226, 232, 240, 0.8);
-            box-shadow: 0 0 0 2px rgba(226, 232, 240, 0.25);
-            outline: none;
-        }
-
-        .badge-stack {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.5rem;
-        }
-
-        .alert-success {
-            background: rgba(34, 197, 94, 0.1);
-            border: 1px solid rgba(16, 185, 129, 0.4);
+        .badge-active {
+            background: var(--black);
+            color: var(--white);
+            border-color: var(--black);
         }
 
         .status-dot {
-            display: inline-flex;
-            height: 0.5rem;
-            position: relative;
-            width: 0.5rem;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s ease-in-out infinite;
         }
 
-        .status-ping {
-            animation: status-ping 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-            background: rgba(52, 211, 153, 0.7);
-            border-radius: 9999px;
-            inset: 0;
-            position: absolute;
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
         }
 
-        .status-dot-inner {
-            background: #6ee7b7;
-            border-radius: 9999px;
-            height: 100%;
-            position: relative;
-            width: 100%;
-        }
-
-        .checkbox-control {
-            background: #0f172a;
-            border: 1px solid #475569;
-            border-radius: 0.5rem;
-            color: #e2e8f0;
-            height: 1.1rem;
-            width: 1.1rem;
-        }
-
-        .checkbox-control:focus {
-            border-color: rgba(226, 232, 240, 0.8);
-            box-shadow: 0 0 0 2px rgba(226, 232, 240, 0.25);
-            outline: none;
-        }
-
-        .field-label {
-            color: #cbd5f5;
-            display: block;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-        }
-
-        .banner-container {
-            border: 1px solid rgba(71, 85, 105, 0.75);
-            bottom: 1rem;
-            left: 1rem;
-            position: fixed;
-            right: 1rem;
-        }
-
-        .banner-transition {
-            transform: translateY(100%);
-            transition: transform 300ms ease;
-        }
-
-        .badge-code {
-            color: #f8fafc;
-            font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-            font-weight: 600;
-            margin-right: 0.5rem;
-        }
-
-        .banner-icon {
-            align-items: center;
-            background: #f8fafc;
-            border-radius: 0.75rem;
-            box-shadow: 0 16px 32px rgba(2, 6, 23, 0.45);
-            color: #020617;
-            display: flex;
-            font-size: 0.9rem;
-            font-weight: 700;
-            height: 2.5rem;
-            justify-content: center;
-            width: 2.5rem;
-        }
-
-        .logo-mark {
-            align-items: center;
-            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 45%, #cbd5f5 100%);
-            border-radius: 0.75rem;
-            box-shadow: 0 20px 40px rgba(2, 6, 23, 0.45);
-            color: #020617;
-            display: flex;
-            font-weight: 700;
-            height: 2.25rem;
-            justify-content: center;
-            width: 2.25rem;
-        }
-
-        .control-card {
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px solid rgba(71, 85, 105, 0.75);
-            border-radius: 0.75rem;
-            padding: 1rem;
-        }
-
-        .toggle-row {
-            align-items: center;
-            border: 1px solid transparent;
-            border-radius: 0.75rem;
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            padding: 0.5rem 0.75rem;
-            transition: background-color 200ms ease, border-color 200ms ease;
-        }
-
-        .toggle-row:hover {
-            background: rgba(15, 23, 42, 0.85);
-            border-color: rgba(71, 85, 105, 0.7);
-        }
-
-        .option-card {
-            align-items: flex-start;
-            border: 1px solid rgba(71, 85, 105, 0.75);
-            border-radius: 0.75rem;
-            cursor: pointer;
-            display: flex;
-            gap: 0.75rem;
-            padding: 0.75rem;
-            transition: background-color 200ms ease, border-color 200ms ease;
-        }
-
-        .option-card:hover {
-            background: rgba(15, 23, 42, 0.85);
-            border-color: rgba(100, 116, 139, 0.8);
-        }
-
-        .option-grid {
+        .grid {
             display: grid;
-            gap: 0.75rem;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
         }
 
-        .animate-pulse-slow {
-            animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
+        .grid-2 { grid-template-columns: repeat(2, 1fr); }
+        .grid-4 { grid-template-columns: repeat(4, 1fr); }
 
-        @keyframes status-ping {
-            0% {
-                transform: scale(1);
-                opacity: 1;
-            }
-
-            75%,
-            100% {
-                transform: scale(2);
-                opacity: 0;
-            }
-        }
-
-        @media (min-width: 640px) {
-            .panel {
-                padding: 1.5rem;
-            }
-
-            .logo-mark {
-                height: 2.75rem;
-                width: 2.75rem;
-            }
-
-            .banner-container {
-                left: auto;
-                max-width: 20rem;
-                right: 1rem;
-            }
-        }
-
-        @media (max-width: 640px) {
-            .mobile-scroll {
-                overflow-x: auto;
-                -webkit-overflow-scrolling: touch;
-            }
+        @media (max-width: 768px) {
+            .container { padding: 0 12px; }
+            .grid-2, .grid-4 { grid-template-columns: 1fr; }
+            .metric-value { font-size: 24px; }
         }
     </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen overflow-x-hidden">
+<body>
 
-    <!-- Mobile-First Header -->
-    <header class="glass sticky top-0 z-50 border-b border-slate-800/80">
-        <div class="max-w-7xl mx-auto px-4 py-3 sm:py-4">
-            <div class="flex items-center justify-between">
-                <div class="flex items-center space-x-3">
-                    <div class="logo-mark text-base sm:text-lg">
+    <header style="background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(8px); border-bottom: 1px solid var(--gray-200); position: sticky; top: 0; z-index: 100;">
+        <div class="container" style="padding: 16px 16px;">
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="width: 40px; height: 40px; background: var(--black); color: var(--white); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px;">
                         R
                     </div>
-                        <div>
-                            <h1 class="text-base sm:text-xl font-semibold text-slate-50">
-                                Routing Dashboard
-                            </h1>
-                            <p class="text-xs sm:text-sm text-slate-400 hidden sm:block">
-                                Performance Optimized • PWA Ready
-                            </p>
-                            <p class="text-xs text-slate-400 sm:hidden">Mobile Optimized</p>
-                        </div>
+                    <div>
+                        <h1 style="font-size: 20px; font-weight: 700; color: var(--gray-900); margin-bottom: 2px;">Routing Dashboard</h1>
+                        <p style="font-size: 12px; color: var(--gray-500);">Clean • Modern • Fast</p>
+                    </div>
                 </div>
 
-                <div class="flex items-center space-x-2 sm:space-x-4">
-                    <div class="flex items-center space-x-1 sm:space-x-2">
-                        <div class="w-2 h-2 sm:w-3 sm:h-3 bg-emerald-400 rounded-full animate-pulse-slow"></div>
-                        <span class="text-xs sm:text-sm text-slate-400 hidden sm:inline">Online</span>
-                        <span class="text-xs text-emerald-400 font-medium sm:hidden">●</span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        <span class="status-dot"></span>
+                        <span style="font-size: 12px; color: var(--gray-600);">Online</span>
                     </div>
-
-                    <button
-                        onclick="location.reload()"
-                        class="btn btn-muted touch-target text-xs sm:text-sm"
-                    >
-                        <svg
-                            class="w-4 h-4"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M21 12a9 9 0 10-1.67 5.19"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            ></path>
-                            <path
-                                d="M21 5v6h-6"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            ></path>
+                    <button onclick="location.reload()" class="btn btn-secondary" style="min-height: 36px; padding: 8px 16px;">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
                         </svg>
-                        <span class="hidden sm:inline">Refresh</span>
                     </button>
                 </div>
             </div>
         </div>
     </header>
 
-    <!-- Main Content -->
-    <main class="max-w-7xl mx-auto px-4 py-4 sm:py-8 space-y-4 sm:space-y-6">
-
-        <!-- Success Messages -->
+    <main class="container" style="padding: 24px 16px;">
         <?php if ($successMessage !== null) : ?>
-            <div class="glass panel card-hover alert-success transition-all duration-300">
-                <div class="flex items-center space-x-3">
-                    <svg
-                        class="w-5 h-5 text-emerald-300 flex-shrink-0"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <path
-                            d="M5 13l4 4L19 7"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
+            <div class="card" style="background: var(--gray-50); border-color: var(--gray-300); padding: 16px; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color: var(--black);">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                     </svg>
-                    <span class="text-emerald-100 font-medium text-sm sm:text-base">
-                        <?php echo $successMessage; ?>
-                    </span>
+                    <span style="color: var(--gray-900); font-weight: 500;"><?php echo escape($successMessage); ?></span>
                 </div>
             </div>
         <?php endif; ?>
 
-        <!-- System Status Card -->
-        <div class="glass panel panel-lg card-hover">
-            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
-                <div>
-                    <h2 class="text-lg sm:text-xl font-semibold text-slate-100 flex items-center gap-2">
-                        <span class="status-dot">
-                            <span class="status-ping"></span>
-                            <span class="status-dot-inner"></span>
-                        </span>
-                        <span>System Status</span>
-                    </h2>
-                    <p class="text-xs sm:text-sm text-slate-400 mt-1">Real-time monitoring • Performance optimized</p>
-                </div>
-                <div class="text-xs sm:text-sm text-slate-400 text-left sm:text-right">
-                    <div>Last updated</div>
-                    <div class="font-mono tracking-tight text-slate-200"><?php echo date('H:i:s'); ?></div>
-                </div>
-            </div>
-
-            <!-- Mobile-first metrics grid -->
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
-                <div class="metric-card">
-                    <div class="text-lg sm:text-xl lg:text-2xl font-semibold text-slate-50 leading-tight">
-                        <?php echo $config['system_on'] ? 'ON' : 'OFF'; ?>
-                    </div>
-                    <div class="text-xs sm:text-sm text-slate-400 mt-1">System</div>
-                </div>
-
-                <div class="metric-card">
-                    <div class="text-lg sm:text-xl lg:text-2xl font-semibold text-slate-50 leading-tight">
-                        <?php echo $config['is_active'] ? 'Active' : 'Inactive'; ?>
-                    </div>
-                    <div class="text-xs sm:text-sm text-slate-400 mt-1">Status</div>
-                </div>
-
-                <div class="metric-card">
-                    <div class="text-lg sm:text-xl lg:text-2xl font-semibold text-slate-50 leading-tight">
-                        <?php echo number_format($stats['success_rate'], 1); ?>%
-                    </div>
-                    <div class="text-xs sm:text-sm text-slate-400 mt-1">Success</div>
-                </div>
-
-                <div class="metric-card">
-                    <div class="text-lg sm:text-xl lg:text-2xl font-semibold text-slate-50 leading-tight">
-                        <?php echo $stats['avg_time']; ?>ms
-                    </div>
-                    <div class="text-xs sm:text-sm text-slate-400 mt-1">Response</div>
-                </div>
-            </div>
-
-            <!-- Feature badges -->
-            <div class="border-t border-slate-800 pt-4 mt-4">
-                <div class="badge-stack">
-                    <span class="badge">
-                        <svg
-                            class="w-3.5 h-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M7 4h10a2 2 0 012 2v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                            />
-                            <path
-                                d="M9 18h6"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                            />
-                        </svg>
-                        Mobile-First
-                    </span>
-                    <span class="badge">
-                        <svg
-                            class="w-3.5 h-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M12 3v18"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                            />
-                            <path
-                                d="M5 9l7-6 7 6"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                        PWA Ready
-                    </span>
-                    <span class="badge">
-                        <svg
-                            class="w-3.5 h-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M13 3h-2l-1 5h4l-1-5z"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                            <path
-                                d="M5 21l2-9h10l2 9H5z"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                        Performance Optimized
-                    </span>
-                    <span class="badge">
-                        <svg
-                            class="w-3.5 h-3.5"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M12 6l7 5-7 5-7-5 7-5z"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linejoin="round"
-                            />
-                            <path
-                                d="M12 21V11"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                            />
-                        </svg>
-                        Touch Optimized
-                    </span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Configuration Panel -->
-        <div class="glass panel panel-lg card-hover transition-all duration-300">
-            <h2 class="text-lg sm:text-xl font-semibold text-slate-100 mb-4 sm:mb-6">System Configuration</h2>
-
-            <form method="POST" class="space-y-4 sm:space-y-6" novalidate>
-                <input type="hidden" name="action" value="update_config">
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
-                    <div class="control-card">
-                        <h3 class="font-medium text-slate-100 mb-3">System Controls</h3>
-                        <div class="space-y-3">
-                            <label class="toggle-row touch-target">
-                                <span class="text-sm font-medium text-slate-200">System ON</span>
-                                <input
-                                    type="checkbox"
-                                    name="system_on"
-                                    <?php echo $systemOnChecked; ?>
-                                    class="checkbox-control"
-                                >
-                            </label>
-                            <label class="toggle-row touch-target">
-                                <span class="text-sm font-medium text-slate-200">Activity Status</span>
-                                <input
-                                    type="checkbox"
-                                    name="is_active"
-                                    <?php echo $isActiveChecked; ?>
-                                    class="checkbox-control"
-                                >
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="control-card">
-                        <h3 class="font-medium text-slate-100 mb-3">Current Status</h3>
-                        <div class="space-y-2 text-sm">
-                            <div class="flex justify-between text-slate-300">
-                                <span>URLs</span>
-                                <span class="font-semibold text-slate-100"><?php echo count($urls); ?></span>
-                            </div>
-                            <div class="flex justify-between text-slate-300">
-                                <span>Countries</span>
-                                <span class="font-semibold text-slate-100"><?php echo count($countries); ?></span>
-                            </div>
-                            <div class="flex justify-between text-slate-300">
-                                <span>Success</span>
-                                <span class="font-semibold text-slate-100"><?php echo $stats['success_rate']; ?>%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Routing Rules -->
-                <div class="control-card">
-                    <h3 class="font-medium text-slate-100 mb-4">Routing Rules</h3>
-                    <div class="space-y-4">
-                        <label class="option-card touch-target">
-                            <input
-                                type="radio"
-                                name="rule_type"
-                                value="static_route"
-                                <?php echo $ruleType === 'static_route' ? 'checked' : ''; ?>
-                                class="mt-1 text-slate-50 focus:ring-slate-100/20 border-slate-600 bg-slate-950"
-                            >
-                            <div>
-                                <div class="font-medium text-slate-100 flex items-center gap-2">
-                                    <svg
-                                        class="w-4 h-4"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <path
-                                            d="M5 12h14"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                        />
-                                        <path
-                                            d="M15 6l4 6-4 6"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                        />
-                                    </svg>
-                                    Static Routing
-                                </div>
-                                <div class="text-sm text-slate-400">Always routes to highest priority URL</div>
-                            </div>
-                        </label>
-
-                        <label class="option-card touch-target">
-                            <input
-                                type="radio"
-                                name="rule_type"
-                                value="random_route"
-                                <?php echo $ruleType === 'random_route' ? 'checked' : ''; ?>
-                                class="mt-1 text-slate-50 focus:ring-slate-100/20 border-slate-600 bg-slate-950"
-                            >
-                            <div>
-                                <div class="font-medium text-slate-100 flex items-center gap-2">
-                                    <svg
-                                        class="w-4 h-4"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <path
-                                            d="M5 5l14 14"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                        />
-                                        <path
-                                            d="M5 19l14-14"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                        />
-                                    </svg>
-                                    Random Routing
-                                </div>
-                                <div class="text-sm text-slate-400">Random selection based on weight</div>
-                            </div>
-                        </label>
-
-                        <label class="option-card touch-target">
-                            <input
-                                type="radio"
-                                name="rule_type"
-                                value="mute_unmute"
-                                <?php echo $ruleType === 'mute_unmute' ? 'checked' : ''; ?>
-                                class="mt-1 text-slate-50 focus:ring-slate-100/20 border-slate-600 bg-slate-950"
-                            >
-                            <div class="flex-1">
-                                <div class="font-medium text-slate-100 flex items-center gap-2">
-                                    <svg
-                                        class="w-4 h-4"
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        xmlns="http://www.w3.org/2000/svg"
-                                    >
-                                        <path
-                                            d="M4 4v6h6"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                        />
-                                        <path
-                                            d="M20 20v-6h-6"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                            stroke-linejoin="round"
-                                        />
-                                        <path
-                                            d="M6 18l12-12"
-                                            stroke="currentColor"
-                                            stroke-width="1.5"
-                                            stroke-linecap="round"
-                                        />
-                                    </svg>
-                                    Mute/Unmute Cycle
-                                </div>
-                                <div class="text-sm text-slate-400 mt-1">Toggles between targeting and normal</div>
-                                <div class="mt-3 option-grid">
-                                    <div>
-                                        <label class="field-label">Mute (seconds)</label>
-                                        <input
-                                            type="number"
-                                            name="mute_duration"
-                                            value="<?php echo $config['mute_duration']; ?>"
-                                            min="30"
-                                            max="600"
-                                            class="touch-target input-field"
-                                        >
-                                    </div>
-                                    <div>
-                                        <label class="field-label">Unmute (seconds)</label>
-                                        <input
-                                            type="number"
-                                            name="unmute_duration"
-                                            value="<?php echo $config['unmute_duration']; ?>"
-                                            min="30"
-                                            max="600"
-                                            class="touch-target input-field"
-                                        >
-                                    </div>
-                                </div>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-
-                <button type="submit" class="btn btn-primary touch-target w-full">
-                    Save Configuration
-                </button>
-            </form>
-        </div>
-
-        <!-- URL Management -->
-        <div class="glass panel panel-lg card-hover transition-all duration-300">
-            <h2 class="text-lg sm:text-xl font-semibold text-slate-100 mb-4 sm:mb-6">Target URLs</h2>
-
-            <form method="POST" class="mb-6 space-y-3 sm:space-y-4" novalidate>
-                <input type="hidden" name="action" value="add_url">
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-12 sm:gap-4">
-                    <input
-                        type="url"
-                        name="url"
-                        placeholder="https://your-target-site.com"
-                        required
-                        class="touch-target input-field sm:col-span-6"
-                    >
-                    <input
-                        type="number"
-                        name="weight"
-                        placeholder="Weight"
-                        value="1"
-                        min="1"
-                        max="100"
-                        class="touch-target input-field sm:col-span-3"
-                    >
-                    <input
-                        type="number"
-                        name="priority"
-                        placeholder="Priority"
-                        value="0"
-                        min="0"
-                        max="999"
-                        class="touch-target input-field sm:col-span-3"
-                    >
-                </div>
-                <button type="submit" class="btn btn-primary touch-target">
-                    <svg
-                        class="w-4 h-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                    >
-                        <path
-                            d="M12 5v14"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                        />
-                        <path
-                            d="M5 12h14"
-                            stroke="currentColor"
-                            stroke-width="1.5"
-                            stroke-linecap="round"
-                        />
+        <?php if ($errorMessage !== null) : ?>
+            <div class="card" style="background: #fef2f2; border-color: #fecaca; padding: 16px; margin-bottom: 24px;">
+                <div style="display: flex; align-items: center; gap: 8px; color: #991b1b;">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M4.93 4.93l14.14 14.14M12 5a7 7 0 017 7 7 7 0 01-7 7 7 7 0 01-7-7 7 7 0 017-7z"></path>
                     </svg>
-                    Add URL
-                </button>
-            </form>
+                    <span style="font-weight: 500;"><?php echo escape($errorMessage); ?></span>
+                </div>
+            </div>
+        <?php endif; ?>
 
-            <div class="space-y-3">
-                <?php foreach ($urls as $url) : ?>
-                    <?php $statusClass = $url['active'] ? 'text-emerald-300' : 'text-rose-300'; ?>
-                    <div class="control-card">
-                        <div class="font-medium text-slate-100 truncate">
-                            <a
-                                href="<?php echo htmlspecialchars($url['url']); ?>"
-                                target="_blank"
-                                class="hover:underline"
-                            >
-                                <?php echo htmlspecialchars($url['url']); ?>
-                            </a>
-                        </div>
-                        <div class="text-sm text-slate-400 mt-1">
-                            Weight: <?php echo $url['weight']; ?> • Priority: <?php echo $url['priority']; ?>
-                            <span class="ml-2 flex items-center gap-1 font-medium <?php echo $statusClass; ?>">
-                                <span class="text-base leading-none">●</span>
-                                <?php echo $url['active'] ? 'Active' : 'Inactive'; ?>
-                            </span>
+        <div class="grid" style="gap: 24px;">
+            <div class="card" style="padding: 24px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px;">
+                    <div>
+                        <h2 style="font-size: 18px; font-weight: 600; color: var(--gray-900); display: flex; align-items: center; gap: 8px;">
+                            <span class="status-dot"></span>
+                            System Status
+                        </h2>
+                        <p style="font-size: 12px; color: var(--gray-500); margin-top: 2px;">Real-time monitoring</p>
+                    </div>
+                    <div style="text-align: right; font-size: 11px; color: var(--gray-400);">
+                        <div>Updated</div>
+                        <div style="font-family: ui-monospace, monospace; font-weight: 600; color: var(--gray-900);">
+                            <?php echo escape(date('H:i:s')); ?>
                         </div>
                     </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
-
-        <!-- Country Management -->
-        <div class="glass panel panel-lg card-hover transition-all duration-300">
-            <h2 class="text-lg sm:text-xl font-semibold text-slate-100 mb-4 sm:mb-6">Country Targeting</h2>
-
-            <form method="POST" class="mb-6 space-y-3" novalidate>
-                <input type="hidden" name="action" value="update_countries">
-                <div class="space-y-3">
-                    <label class="block text-sm font-medium text-slate-200">Country Codes (ISO 3166-1)</label>
-                    <textarea
-                        name="countries"
-                        rows="3"
-                        placeholder="US, UK, DE, FR, ID, JP, CN, IN, CA, AU"
-                        class="touch-target textarea-field resize-none"
-                    ><?php echo $activeCountryCodes; ?></textarea>
-                    <p class="text-xs text-slate-400">Comma-separated country codes (e.g., US, UK, DE)</p>
-                    <button type="submit" class="btn btn-primary touch-target">
-                        <svg
-                            class="w-4 h-4"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            xmlns="http://www.w3.org/2000/svg"
-                        >
-                            <path
-                                d="M5 12h14"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                            />
-                            <path
-                                d="M12 5v14"
-                                stroke="currentColor"
-                                stroke-width="1.5"
-                                stroke-linecap="round"
-                            />
-                        </svg>
-                        Update Countries
-                    </button>
                 </div>
-            </form>
 
-            <div>
-                <h3 class="font-medium text-slate-100 mb-3">
-                    Active Countries (<?php echo count($countries); ?>)
-                </h3>
-                <div class="flex flex-wrap gap-2">
-                    <?php foreach ($countries as $country) : ?>
-                        <span class="badge">
-                            <span class="badge-code"><?php echo $country['code']; ?></span>
-                            <?php echo $country['name']; ?>
-                        </span>
+                <div class="grid grid-4" style="margin-bottom: 20px;">
+                    <div class="metric">
+                        <div class="metric-value"><?php echo escape($systemStatus); ?></div>
+                        <div class="metric-label">System</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-value"><?php echo escape($activityStatus); ?></div>
+                        <div class="metric-label">Status</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-value"><?php echo escape(number_format($stats['success'], 1)); ?>%</div>
+                        <div class="metric-label">Success</div>
+                    </div>
+
+                    <div class="metric">
+                        <div class="metric-value"><?php echo escape((string) $stats['response']); ?>ms</div>
+                        <div class="metric-label">Response</div>
+                    </div>
+                </div>
+
+                <div style="display: flex; flex-wrap: wrap; gap: 8px; padding-top: 16px; border-top: 1px solid var(--gray-200);">
+                    <span class="badge <?php echo $systemOn ? 'badge-active' : ''; ?>">
+                        SYSTEM <?php echo escape($systemStatus); ?>
+                    </span>
+                    <span class="badge <?php echo $isActive ? 'badge-active' : ''; ?>">
+                        <?php echo escape($activityStatus); ?>
+                    </span>
+                    <span class="badge">MOBILE-FIRST</span>
+                    <span class="badge">PWA-READY</span>
+                </div>
+            </div>
+
+            <div class="card" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 600; color: var(--gray-900); margin-bottom: 20px;">Configuration</h2>
+
+                <form method="POST" style="display: flex; flex-direction: column; gap: 20px;" novalidate>
+                    <input type="hidden" name="action" value="update_config">
+                    <input type="hidden" name="csrf_token" value="<?php echo escape($csrfToken); ?>">
+
+                    <div class="grid grid-2">
+                        <div style="padding: 20px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50);">
+                            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--gray-900);">System</h3>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 36px;">
+                                    <input type="checkbox" name="system_on" <?php echo $systemOn ? 'checked' : ''; ?> style="width: 16px; height: 16px; accent-color: var(--black);">
+                                    <span style="font-size: 14px; color: var(--gray-900);">System ON</span>
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; min-height: 36px;">
+                                    <input type="checkbox" name="is_active" <?php echo $isActive ? 'checked' : ''; ?> style="width: 16px; height: 16px; accent-color: var(--black);">
+                                    <span style="font-size: 14px; color: var(--gray-900);">Active</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div style="padding: 20px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50);">
+                            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--gray-900);">Metrics</h3>
+                            <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: var(--gray-600);">URLs</span>
+                                    <span style="font-weight: 600; color: var(--gray-900);"><?php echo escape((string) count($urls)); ?></span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: var(--gray-600);">Countries</span>
+                                    <span style="font-weight: 600; color: var(--gray-900);"><?php echo escape((string) count($countries)); ?></span>
+                                </div>
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: var(--gray-600);">Requests</span>
+                                    <span style="font-weight: 600; color: var(--gray-900);"><?php echo escape(number_format($stats['requests'])); ?></span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="padding: 20px; border: 1px solid var(--gray-200); border-radius: var(--radius); background: var(--gray-50);">
+                        <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 16px; color: var(--gray-900);">Routing Rules</h3>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <label style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--white); cursor: pointer; transition: border-color var(--transition);" onmouseover="this.style.borderColor='var(--black)'" onmouseout="this.style.borderColor='var(--gray-200)';">
+                                <input type="radio" name="rule_type" value="static_route" <?php echo $ruleType === 'static_route' ? 'checked' : ''; ?> style="margin-top: 2px; accent-color: var(--black);">
+                                <div>
+                                    <div style="font-weight: 500; color: var(--gray-900); margin-bottom: 2px;">Static Route</div>
+                                    <div style="font-size: 12px; color: var(--gray-600);">Highest priority URL</div>
+                                </div>
+                            </label>
+
+                            <label style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--white); cursor: pointer; transition: border-color var(--transition);" onmouseover="this.style.borderColor='var(--black)'" onmouseout="this.style.borderColor='var(--gray-200)';">
+                                <input type="radio" name="rule_type" value="random_route" <?php echo $ruleType === 'random_route' ? 'checked' : ''; ?> style="margin-top: 2px; accent-color: var(--black);">
+                                <div>
+                                    <div style="font-weight: 500; color: var(--gray-900); margin-bottom: 2px;">Random Route</div>
+                                    <div style="font-size: 12px; color: var(--gray-600);">Weight-based selection</div>
+                                </div>
+                            </label>
+
+                            <label style="display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--white); cursor: pointer; transition: border-color var(--transition);" onmouseover="this.style.borderColor='var(--black)'" onmouseout="this.style.borderColor='var(--gray-200)';">
+                                <input type="radio" name="rule_type" value="mute_unmute" <?php echo $ruleType === 'mute_unmute' ? 'checked' : ''; ?> style="margin-top: 2px; accent-color: var(--black);">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 500; color: var(--gray-900); margin-bottom: 2px;">Mute/Unmute</div>
+                                    <div style="font-size: 12px; color: var(--gray-600); margin-bottom: 8px;">Time-based toggle</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                                        <input type="number" name="mute_duration" value="<?php echo escape($muteDuration); ?>" placeholder="Mute" class="input" style="padding: 6px 8px; min-height: 32px; font-size: 12px;">
+                                        <input type="number" name="unmute_duration" value="<?php echo escape($unmuteDuration); ?>" placeholder="Unmute" class="input" style="padding: 6px 8px; min-height: 32px; font-size: 12px;">
+                                    </div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" style="width: 100%;">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                        SAVE CONFIGURATION
+                    </button>
+                </form>
+            </div>
+
+            <div class="card" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 600; color: var(--gray-900); margin-bottom: 20px;">Target URLs</h2>
+
+                <form method="POST" style="margin-bottom: 20px;" novalidate>
+                    <input type="hidden" name="action" value="add_url">
+                    <input type="hidden" name="csrf_token" value="<?php echo escape($csrfToken); ?>">
+                    <div style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 12px; align-items: end;">
+                        <input type="url" name="url" placeholder="https://target-site.com" required class="input">
+                        <input type="number" name="weight" value="1" min="1" class="input" placeholder="Weight">
+                        <input type="number" name="priority" value="1" min="0" class="input" placeholder="Priority">
+                        <button type="submit" class="btn btn-primary">ADD</button>
+                    </div>
+                </form>
+
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <?php foreach ($urls as $index => $url) : ?>
+                        <?php $isUrlActive = (bool) $url['active']; ?>
+                        <div style="padding: 16px; border: 1px solid var(--gray-200); border-radius: 8px; background: var(--white); transition: border-color var(--transition);" onmouseover="this.style.borderColor='var(--black)'" onmouseout="this.style.borderColor='var(--gray-200)';">
+                            <div style="display: flex; align-items: center; justify-content: space-between;">
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 500; margin-bottom: 4px;">
+                                        <a href="<?php echo escape($url['url']); ?>" target="_blank" style="color: var(--black); text-decoration: none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none';">
+                                            <?php echo escape($url['url']); ?>
+                                        </a>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-600);">
+                                        Weight: <strong><?php echo escape((string) $url['weight']); ?></strong> • Priority: <strong><?php echo escape((string) $url['priority']); ?></strong>
+                                        <span style="color: #10b981; margin-left: 8px;">● <?php echo escape($isUrlActive ? 'ACTIVE' : 'INACTIVE'); ?></span>
+                                    </div>
+                                </div>
+                                <span style="background: var(--gray-100); color: var(--gray-700); padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: 500;">#<?php echo escape((string) ($index + 1)); ?></span>
+                            </div>
+                        </div>
                     <?php endforeach; ?>
                 </div>
             </div>
-        </div>
 
-    </main>
+            <div class="card" style="padding: 24px;">
+                <h2 style="font-size: 18px; font-weight: 600; color: var(--gray-900); margin-bottom: 20px;">Country Targeting</h2>
 
-    <!-- PWA Install Banner -->
-    <div
-        id="pwa-install-banner"
-        class="banner-container glass panel text-slate-100 banner-transition"
-    >
-        <div class="flex items-center space-x-3">
-            <div class="banner-icon">R</div>
-            <div class="flex-1 min-w-0">
-                <h4 class="font-semibold text-sm mb-1">Install Dashboard</h4>
-                <p class="text-xs text-slate-400 mb-2">Add to home screen for native experience</p>
-                <div class="flex space-x-2">
-                    <button id="install-btn" class="btn btn-primary touch-target text-xs px-3 py-1.5">Install</button>
-                    <button id="dismiss-btn" class="btn btn-ghost touch-target text-xs px-2 py-1.5">Later</button>
+                <form method="POST" style="margin-bottom: 20px;" novalidate>
+                    <input type="hidden" name="action" value="update_countries">
+                    <input type="hidden" name="csrf_token" value="<?php echo escape($csrfToken); ?>">
+                    <div style="margin-bottom: 12px;">
+                        <label style="display: block; font-size: 12px; font-weight: 500; color: var(--gray-900); margin-bottom: 8px;">Country Codes (ISO 3166-1)</label>
+                        <textarea name="countries" rows="2" placeholder="US, UK, DE, FR, ID" class="input" style="font-family: ui-monospace, monospace; resize: vertical;"><?php echo escape($countryCodes); ?></textarea>
+                        <div style="font-size: 11px; color: var(--gray-500); margin-top: 4px;">Comma-separated codes</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">UPDATE COUNTRIES</button>
+                </form>
+
+                <div>
+                    <div style="font-size: 14px; font-weight: 500; margin-bottom: 12px; color: var(--gray-900);">
+                        Active Countries (<?php echo escape((string) count($countries)); ?>)
+                    </div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <?php foreach ($countries as $country) : ?>
+                            <span style="display: inline-flex; align-items: center; padding: 6px 10px; background: var(--white); border: 1px solid var(--gray-200); border-radius: 6px; font-size: 12px;">
+                                <span style="font-family: ui-monospace, monospace; font-weight: 700; margin-right: 4px; color: var(--black);"><?php echo escape($country['code']); ?></span>
+                                <span style="color: var(--gray-600);"><?php echo escape($country['name']); ?></span>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
             </div>
         </div>
+    </main>
+
+    <div id="pwa-banner" style="position: fixed; bottom: 16px; right: 16px; width: 300px; background: var(--black); color: var(--white); padding: 16px; border-radius: var(--radius); box-shadow: var(--shadow); transform: translateY(100%); transition: transform 0.3s ease;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="width: 32px; height: 32px; background: var(--white); color: var(--black); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; flex-shrink: 0;">R</div>
+            <div style="flex: 1;">
+                <div style="font-size: 13px; font-weight: 600; margin-bottom: 2px;">Install App</div>
+                <div style="font-size: 11px; opacity: 0.8;">Add to home screen</div>
+            </div>
+            <button id="install-btn" style="background: var(--white); color: var(--black); border: none; padding: 6px 10px; border-radius: 4px; font-size: 11px; font-weight: 500; cursor: pointer;">INSTALL</button>
+        </div>
     </div>
 
+    <footer style="text-align: center; padding: 32px 16px; border-top: 1px solid var(--gray-200); margin-top: 32px;">
+        <div style="display: inline-flex; align-items: center; gap: 16px; background: var(--white); border: 1px solid var(--gray-200); border-radius: 8px; padding: 12px 16px; font-size: 11px; color: var(--gray-500);">
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="width: 4px; height: 4px; background: #10b981; border-radius: 50%;"></span>
+                MOBILE-FIRST
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="width: 4px; height: 4px; background: var(--black); border-radius: 50%;"></span>
+                MODERN
+            </span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+                <span style="width: 4px; height: 4px; background: var(--gray-400); border-radius: 50%;"></span>
+                FAST
+            </span>
+        </div>
+    </footer>
+
     <script>
-        // PWA Installation
         let deferredPrompt;
-        
-        window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault();
-            deferredPrompt = e;
+
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredPrompt = event;
             setTimeout(() => {
-                document.getElementById('pwa-install-banner').style.transform = 'translateY(0)';
-            }, 3000);
+                const banner = document.getElementById('pwa-banner');
+                if (banner) {
+                    banner.style.transform = 'translateY(0)';
+                }
+            }, 2000);
         });
-        
-        document.getElementById('install-btn').addEventListener('click', async () => {
-            if (deferredPrompt) {
+
+        const installButton = document.getElementById('install-btn');
+        if (installButton) {
+            installButton.addEventListener('click', async () => {
+                if (!deferredPrompt) {
+                    return;
+                }
+
                 deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
+                await deferredPrompt.userChoice;
                 deferredPrompt = null;
-                document.getElementById('pwa-install-banner').style.transform = 'translateY(100%)';
-            }
-        });
-        
-        document.getElementById('dismiss-btn').addEventListener('click', () => {
-            document.getElementById('pwa-install-banner').style.transform = 'translateY(100%)';
-        });
-        
-        // Touch feedback
-        document.querySelectorAll('.touch-target').forEach((element) => {
+                const banner = document.getElementById('pwa-banner');
+                if (banner) {
+                    banner.style.transform = 'translateY(100%)';
+                }
+            });
+        }
+
+        document.querySelectorAll('.btn, .input').forEach((element) => {
             element.addEventListener('touchstart', () => {
                 element.style.transform = 'scale(0.98)';
             });
