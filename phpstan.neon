@@ -1,7 +1,5 @@
 parameters:
-  level: max
-  paths:
-    - src
-    - tests
-  checkGenericClassInNonGenericObjectType: true
-  reportUnmatchedIgnoredErrors: true
+    level: max
+    paths:
+        - index.php
+    reportUnmatchedIgnoredErrors: true

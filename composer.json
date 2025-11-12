@@ -14,7 +14,7 @@
   "scripts": {
     "cs": "php vendor/bin/phpcs --standard=phpcs.xml src tests",
     "cs-fix:dry": "php vendor/bin/php-cs-fixer fix --dry-run --diff",
-    "phpstan": "php vendor/bin/phpstan analyse --level=max src tests",
+    "phpstan": "php vendor/bin/phpstan analyse --level=max src index.php tests",
     "phpunit": "php vendor/bin/phpunit --fail-on-warning"
   },
   "config": {
