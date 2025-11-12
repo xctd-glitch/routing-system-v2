@@ -1,23 +1,41 @@
 {
+  "name": "srp/routing-system-v2",
+  "description": "Smart Redirect Platform API and dashboard.",
+  "type": "project",
+  "license": "proprietary",
   "require": {
     "php": "^8.3",
     "ext-json": "*",
     "ext-pdo": "*",
-    "ext-curl": "*"
+    "ext-curl": "*",
+    "ext-mbstring": "*",
+    "ext-xml": "*",
+    "ext-zip": "*"
   },
   "require-dev": {
-    "friendsofphp/php-cs-fixer": "^3.89",
-    "phpstan/phpstan": "^2.1",
-    "phpunit/phpunit": "^11",
-    "squizlabs/php_codesniffer": "^3.9"
+    "phpunit/phpunit": "^11.4",
+    "phpstan/phpstan": "^1.11",
+    "squizlabs/php_codesniffer": "^3.9",
+    "friendsofphp/php-cs-fixer": "^3.57"
   },
- {
+  "autoload": {
+    "psr-4": {
+      "SRP\\": "src/"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "SRP\\Tests\\": "tests/"
+    }
+  },
+  "config": {
+    "optimize-autoloader": true,
+    "sort-packages": true
+  },
   "scripts": {
     "phpstan": "vendor/bin/phpstan analyse --no-progress --level=max src tests",
-    "cs": "php vendor/bin/phpcs --standard=phpcs.xml src tests",
-    "cs-fix:dry": "php vendor/bin/php-cs-fixer fix --dry-run --diff",
-    "phpstan": "php vendor/bin/phpstan analyse --level=max src index.php tests",
-    "phpunit": "php vendor/bin/phpunit --fail-on-warning"
+    "cs": "vendor/bin/phpcs --standard=phpcs.xml src tests",
+    "cs-fix:dry": "vendor/bin/php-cs-fixer fix --dry-run --diff",
     "test": "vendor/bin/phpunit --fail-on-warning --display-warnings --testdox",
     "quality": [
       "@cs",
@@ -25,11 +43,7 @@
       "@phpstan",
       "@test"
     ]
-  }
-},
-  "config": {
-    "optimize-autoloader": true,
-    "sort-packages": true
-  }
+  },
+  "minimum-stability": "stable",
+  "prefer-stable": true
 }
-
