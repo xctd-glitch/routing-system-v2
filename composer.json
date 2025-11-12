@@ -39,9 +39,10 @@
 "quality": "composer lint && composer stan && composer test",
 "build": "npm run build",
 "ci": "composer install --no-progress --ansi && npm ci && npm run build && composer quality"
-},
+  },
   "minimum-stability": "stable",
   "prefer-stable": true
 }
+
 
 
