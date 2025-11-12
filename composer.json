@@ -11,13 +11,11 @@
     "phpunit/phpunit": "^11",
     "squizlabs/php_codesniffer": "^3.9"
   },
- {
   "scripts": {
     "phpstan": "vendor/bin/phpstan analyse --no-progress --level=max src tests",
-    "cs": "php vendor/bin/phpcs --standard=phpcs.xml src tests",
-    "cs-fix:dry": "php vendor/bin/php-cs-fixer fix --dry-run --diff",
-    "phpstan": "php vendor/bin/phpstan analyse --level=max src tests",
-    "phpunit": "php vendor/bin/phpunit --fail-on-warning"
+    "cs": "vendor/bin/phpcs --standard=phpcs.xml src tests",
+    "cs-fix:dry": "vendor/bin/php-cs-fixer fix --dry-run --diff",
+    "phpunit": "vendor/bin/phpunit --fail-on-warning",
     "test": "vendor/bin/phpunit --fail-on-warning --display-warnings --testdox",
     "quality": [
       "@cs",
@@ -25,11 +23,9 @@
       "@phpstan",
       "@test"
     ]
-  }
-},
+  },
   "config": {
     "optimize-autoloader": true,
     "sort-packages": true
   }
 }
-
