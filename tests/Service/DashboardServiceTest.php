@@ -89,6 +89,66 @@ final class DashboardServiceTest extends TestCase
         self::assertSame(['US', 'DE', 'UK'], $codes);
     }
 
+    public function testGetStateFallsBackToDefaultConfigOnInvalidPersistedValues(): void
+    {
+        $storage = new JsonFileStorage($this->dataFile, DashboardService::getDefaultState());
+
+        $storage->write([
+            'config' => [
+                'system_on' => true,
+                'is_active' => true,
+                'rule_type' => 'invalid_rule',
+                'mute_duration' => 999999,
+                'unmute_duration' => -50,
+            ],
+            'urls' => DashboardService::getDefaultState()['urls'],
+            'countries' => DashboardService::getDefaultState()['countries'],
+        ]);
+
+        $service = new DashboardService($storage);
+        $config = $service->getState()['config'];
+
+        self::assertTrue($config['system_on']);
+        self::assertTrue($config['is_active']);
+        self::assertSame(DashboardService::getDefaultState()['config']['rule_type'], $config['rule_type']);
+        self::assertSame(DashboardService::getDefaultState()['config']['mute_duration'], $config['mute_duration']);
+        self::assertSame(DashboardService::getDefaultState()['config']['unmute_duration'], $config['unmute_duration']);
+    }
+
+    public function testGetStateSkipsPersistedUrlsWithInvalidAttributes(): void
+    {
+        $storage = new JsonFileStorage($this->dataFile, DashboardService::getDefaultState());
+
+        $storage->write([
+            'config' => DashboardService::getDefaultState()['config'],
+            'urls' => [
+                [
+                    'id' => 10,
+                    'url' => 'https://valid.example',
+                    'weight' => 5,
+                    'priority' => 2,
+                    'active' => true,
+                ],
+                [
+                    'id' => 11,
+                    'url' => 'https://invalid-weight.example',
+                    'weight' => 2000,
+                    'priority' => 1,
+                    'active' => true,
+                ],
+            ],
+            'countries' => DashboardService::getDefaultState()['countries'],
+        ]);
+
+        $service = new DashboardService($storage);
+        $urls = $service->getState()['urls'];
+
+        self::assertCount(1, $urls);
+        self::assertSame(10, $urls[0]['id']);
+        self::assertSame('https://valid.example', $urls[0]['url']);
+        self::assertSame(2, $urls[0]['priority']);
+    }
+
     private function createService(): DashboardService
     {
         $storage = new JsonFileStorage($this->dataFile, DashboardService::getDefaultState());

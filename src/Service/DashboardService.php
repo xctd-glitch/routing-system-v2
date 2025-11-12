@@ -255,14 +255,34 @@ final class DashboardService
         $muteDurationValue = is_int($muteDurationSource) ? $muteDurationSource : self::DEFAULT_CONFIG['mute_duration'];
 
         $unmuteDurationSource = $merged['unmute_duration'] ?? self::DEFAULT_CONFIG['unmute_duration'];
-        $unmuteDurationValue = is_int($unmuteDurationSource) ? $unmuteDurationSource : self::DEFAULT_CONFIG['unmute_duration'];
+        $unmuteDurationValue = is_int($unmuteDurationSource)
+            ? $unmuteDurationSource
+            : self::DEFAULT_CONFIG['unmute_duration'];
+
+        try {
+            $ruleType = $this->sanitizeRuleType($ruleTypeValue);
+        } catch (InvalidArgumentException $exception) {
+            $ruleType = self::DEFAULT_CONFIG['rule_type'];
+        }
+
+        try {
+            $muteDuration = $this->sanitizeDuration($muteDurationValue);
+        } catch (InvalidArgumentException $exception) {
+            $muteDuration = self::DEFAULT_CONFIG['mute_duration'];
+        }
+
+        try {
+            $unmuteDuration = $this->sanitizeDuration($unmuteDurationValue);
+        } catch (InvalidArgumentException $exception) {
+            $unmuteDuration = self::DEFAULT_CONFIG['unmute_duration'];
+        }
 
         return [
             'system_on' => $systemOn,
             'is_active' => $isActive,
-            'rule_type' => $this->sanitizeRuleType($ruleTypeValue),
-            'mute_duration' => $this->sanitizeDuration($muteDurationValue),
-            'unmute_duration' => $this->sanitizeDuration($unmuteDurationValue),
+            'rule_type' => $ruleType,
+            'mute_duration' => $muteDuration,
+            'unmute_duration' => $unmuteDuration,
         ];
     }
 
@@ -395,11 +415,18 @@ final class DashboardService
         $activeValue = $entry['active'] ?? true;
         $isActive = is_bool($activeValue) ? $activeValue : (bool) $activeValue;
 
+        try {
+            $weightSanitized = $this->sanitizeRange($weight, 1, 1000, 'weight');
+            $prioritySanitized = $this->sanitizeRange($priority, 0, 1000, 'priority');
+        } catch (InvalidArgumentException $exception) {
+            return null;
+        }
+
         return [
             'id' => $idValue,
             'url' => $validatedUrl,
-            'weight' => $this->sanitizeRange($weight, 1, 1000, 'weight'),
-            'priority' => $this->sanitizeRange($priority, 0, 1000, 'priority'),
+            'weight' => $weightSanitized,
+            'priority' => $prioritySanitized,
             'active' => $isActive,
         ];
     }
