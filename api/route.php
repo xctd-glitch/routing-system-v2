@@ -109,6 +109,18 @@ function persistMuteState(string $currentState, int $lastToggleTimestamp): void
 }
 
 /**
+ * Synchronize the in-memory and persisted mute/unmute state.
+ *
+ * @param array<string, mixed> $systemConfig
+ */
+function updateMuteState(array &$systemConfig, string $currentState, int $timestamp): void
+{
+    $systemConfig['current_state'] = $currentState;
+    $systemConfig['last_toggle_time'] = date('c', $timestamp);
+    persistMuteState($currentState, $timestamp);
+}
+
+/**
  * Main Routing Decision API
  * High-Performance Mobile-Optimized Endpoint
  */
@@ -397,9 +409,7 @@ switch ($systemConfig['rule_type']) {
         if ($lastToggle === false || $lastToggle === null) {
             $currentState = 'unmute';
             $lastToggle = $now;
-            $systemConfig['current_state'] = $currentState;
-            $systemConfig['last_toggle_time'] = date('c', $lastToggle);
-            persistMuteState($currentState, $lastToggle);
+            updateMuteState($systemConfig, $currentState, $lastToggle);
         }
 
         $duration = $currentState === 'mute'
@@ -409,9 +419,7 @@ switch ($systemConfig['rule_type']) {
         if (($now - $lastToggle) >= $duration) {
             $currentState = $currentState === 'mute' ? 'unmute' : 'mute';
             $lastToggle = $now;
-            $systemConfig['current_state'] = $currentState;
-            $systemConfig['last_toggle_time'] = date('c', $lastToggle);
-            persistMuteState($currentState, $lastToggle);
+            updateMuteState($systemConfig, $currentState, $lastToggle);
         }
 
         if ($currentState === 'unmute') {
