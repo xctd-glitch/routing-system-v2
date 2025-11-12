@@ -1,216 +1,129 @@
 <?php
-/**
- * Installation Wizard - Mobile-First Design
- * Dashboard Routing System v1.0
- */
-
-$step = $_GET['step'] ?? 'install';
-$error = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (isset($_POST['install_database'])) {
-        try {
-            // Simulate database installation
-            // In production, this would create actual database tables
-            if (!is_dir('config')) {
-                mkdir('config', 0755, true);
-            }
-            file_put_contents('config/installed.lock', date('Y-m-d H:i:s'));
-            header('Location: install.php?step=success');
-            exit;
-        } catch (Exception $e) {
-            $error = 'Installation failed: ' . $e->getMessage();
-        }
-    }
+if ($_POST && isset($_POST['install'])) {
+    if (!is_dir('config')) mkdir('config', 0755, true);
+    file_put_contents('config/installed.lock', date('Y-m-d H:i:s'));
+    header('Location: install.php?done=1');
+    exit;
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Setup - Dashboard Routing System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <meta name="theme-color" content="#3b82f6">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup</title>
+    <meta name="theme-color" content="#000000">
+    
     <style>
-        .glass { 
-            backdrop-filter: blur(12px); 
-            background: rgba(255, 255, 255, 0.9);
-            border: 1px solid rgba(255, 255, 255, 0.3);
+        :root {
+            --white: #ffffff;
+            --black: #000000;
+            --gray-50: #f9fafb;
+            --gray-200: #e5e7eb;
+            --gray-600: #4b5563;
+            --gray-900: #111827;
         }
-        .touch-target { 
-            min-height: 44px; 
-            min-width: 44px; 
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
         }
-        * { 
-            -webkit-tap-highlight-color: transparent; 
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, var(--gray-50) 0%, var(--white) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+
+        .card {
+            background: var(--white);
+            border: 1px solid var(--gray-200);
+            border-radius: 16px;
+            padding: 32px;
+            max-width: 400px;
+            width: 100%;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+        }
+
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            min-height: 48px;
+            background: var(--black);
+            color: var(--white);
+            border: none;
+            border-radius: 12px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 150ms ease;
+            text-decoration: none;
+        }
+
+        .btn:hover {
+            background: var(--gray-600);
+            transform: translateY(-1px);
         }
     </style>
 </head>
-<body class="bg-gradient-to-br from-blue-50 via-white to-purple-50 min-h-screen flex items-center justify-center p-4">
+<body>
 
-    <div class="w-full max-w-md">
-        <div class="glass rounded-2xl p-6 sm:p-8 shadow-2xl border border-white/20">
-            
-            <!-- Header -->
-            <div class="text-center mb-6 sm:mb-8">
-                <div class="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-br from-blue-600 to-purple-600 rounded-2xl flex items-center justify-center text-white text-2xl sm:text-3xl font-bold mx-auto mb-4 shadow-lg">
-                    R
-                </div>
-                <h1 class="text-xl sm:text-2xl font-bold text-gray-900 mb-2">Dashboard Setup</h1>
-                <p class="text-sm sm:text-base text-gray-600">Mobile-First Routing System</p>
-                <div class="mt-2 flex items-center justify-center space-x-2 text-xs text-gray-500">
-                    <span class="flex items-center space-x-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                        </svg>
-                        <span>Mobile-First</span>
-                    </span>
-                    <span class="flex items-center space-x-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                        </svg>
-                        <span>PWA Ready</span>
-                    </span>
-                </div>
-            </div>
-
-            <!-- Error Message -->
-            <?php if ($error): ?>
-                <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6">
-                    <div class="flex items-start space-x-2">
-                        <svg class="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <div>
-                            <h3 class="font-medium text-sm">Installation Error</h3>
-                            <p class="text-xs mt-1"><?php echo htmlspecialchars($error); ?></p>
-                        </div>
-                    </div>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($step === 'success'): ?>
-                <!-- Success Step -->
-                <div class="text-center">
-                    <div class="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg class="w-8 h-8 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                    </div>
-                    <h2 class="text-lg sm:text-xl font-bold text-gray-900 mb-3">Installation Complete!</h2>
-                    <p class="text-sm sm:text-base text-gray-600 mb-6">Your dashboard routing system is ready to use with mobile-first design and PWA capabilities.</p>
-                    
-                    <div class="space-y-3">
-                        <a href="index.php" class="touch-target w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center space-x-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2H5a2 2 0 00-2-2z"></path>
-                            </svg>
-                            <span>Access Dashboard</span>
-                        </a>
-                        
-                        <div class="grid grid-cols-2 gap-2">
-                            <a href="#" class="touch-target text-center text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg transition-colors font-medium">
-                                📚 Documentation
-                            </a>
-                            <a href="api/route.php" target="_blank" class="touch-target text-center text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 py-2 px-3 rounded-lg transition-colors font-medium">
-                                🔌 API Test
-                            </a>
-                        </div>
-                    </div>
-                </div>
-
-            <?php else: ?>
-                <!-- Installation Step -->
-                <div class="space-y-6">
-                    
-                    <!-- Requirements Check -->
-                    <div class="space-y-4">
-                        <div class="bg-blue-50 border border-blue-200 rounded-xl p-4">
-                            <h3 class="font-medium text-blue-900 mb-2 text-sm sm:text-base">Before Installation</h3>
-                            <div class="text-xs sm:text-sm text-blue-800 space-y-1">
-                                <p>✓ Create MySQL database: <code class="bg-blue-100 px-1 rounded font-mono">routing_system</code></p>
-                                <p>✓ Update <code class="bg-blue-100 px-1 rounded font-mono">.env</code> with your database credentials</p>
-                                <p>✓ Ensure PHP 8.0+ and required extensions are enabled</p>
-                                <p>✓ Verify file write permissions for your hosting</p>
-                            </div>
-                        </div>
-
-                        <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                            <h3 class="font-medium text-emerald-900 mb-2 text-sm sm:text-base">Installation Features</h3>
-                            <div class="text-xs sm:text-sm text-emerald-800 space-y-1">
-                                <p>• Database tables with optimized indexes for performance</p>
-                                <p>• Mobile-first responsive interface with 44px touch targets</p>
-                                <p>• PWA capabilities with offline support and app installation</p>
-                                <p>• Performance monitoring and real-time analytics</p>
-                                <p>• Complete routing system with 3 advanced rules</p>
-                                <p>• Glass morphism UI with modern gradient effects</p>
-                            </div>
-                        </div>
-
-                        <div class="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                            <h3 class="font-medium text-amber-900 mb-2 text-sm sm:text-base">System Requirements</h3>
-                            <div class="text-xs sm:text-sm text-amber-800 space-y-1">
-                                <p>• PHP Version: <?php echo phpversion(); ?> <?php echo version_compare(phpversion(), '8.0.0', '>=') ? '✓' : '⚠️ Requires 8.0+'; ?></p>
-                                <p>• MySQL Extension: <?php echo extension_loaded('mysql') || extension_loaded('mysqli') || extension_loaded('pdo_mysql') ? '✓' : '⚠️ Required'; ?></p>
-                                <p>• cURL Extension: <?php echo extension_loaded('curl') ? '✓' : '⚠️ Required'; ?></p>
-                                <p>• Write Permissions: <?php echo is_writable('.') ? '✓' : '⚠️ Check permissions'; ?></p>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Installation Form -->
-                    <form method="POST" class="space-y-4">
-                        <button type="submit" name="install_database" value="1"
-                                class="touch-target w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-3 sm:py-4 px-6 rounded-xl transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center space-x-2">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                            </svg>
-                            <span>Install Dashboard System</span>
-                        </button>
-                        
-                        <div class="text-center">
-                            <a href="index.php" class="text-sm text-gray-600 hover:text-gray-800 transition-colors underline">
-                                Skip installation (if already installed)
-                            </a>
-                        </div>
-                    </form>
-                </div>
-            <?php endif; ?>
-
+    <div class="card">
+        <div style="text-align: center; margin-bottom: 32px;">
+            <div style="width: 64px; height: 64px; background: var(--black); color: var(--white); border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 700; margin: 0 auto 16px;">R</div>
+            <h1 style="font-size: 24px; font-weight: 700; color: var(--gray-900); margin-bottom: 8px;">Setup</h1>
+            <p style="color: var(--gray-600); font-size: 14px;">Modern Routing System</p>
         </div>
+
+        <?php if (isset($_GET['done'])): ?>
+            <div style="text-align: center;">
+                <div style="width: 48px; height: 48px; background: #dcfce7; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px;">
+                    <svg width="24" height="24" fill="none" stroke="#16a34a" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                    </svg>
+                </div>
+                <h2 style="font-size: 18px; font-weight: 600; color: var(--gray-900); margin-bottom: 12px;">Setup Complete</h2>
+                <p style="color: var(--gray-600); font-size: 14px; margin-bottom: 24px;">System ready for use</p>
+                <a href="index.php" class="btn">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                    </svg>
+                    ACCESS DASHBOARD
+                </a>
+            </div>
+        <?php else: ?>
+            <div style="display: flex; flex-direction: column; gap: 20px;">
+                <div style="background: var(--gray-50); border: 1px solid var(--gray-200); border-radius: 12px; padding: 16px;">
+                    <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 8px; color: var(--gray-900);">Features</h3>
+                    <div style="font-size: 13px; color: var(--gray-600); line-height: 1.4;">
+                        <div>• Clean black & white design</div>
+                        <div>• Mobile-first responsive</div>
+                        <div>• PWA installation ready</div>
+                        <div>• Performance optimized</div>
+                    </div>
+                </div>
+
+                <form method="POST">
+                    <button type="submit" name="install" value="1" class="btn">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                        </svg>
+                        INSTALL SYSTEM
+                    </button>
+                </form>
+            </div>
+        <?php endif; ?>
+
     </div>
-
-    <script>
-        // Touch feedback
-        document.querySelectorAll('.touch-target').forEach(element => {
-            element.addEventListener('touchstart', function() {
-                this.style.transform = 'scale(0.98)';
-            });
-            
-            element.addEventListener('touchend', function() {
-                this.style.transform = 'scale(1)';
-            });
-        });
-
-        // Installation progress
-        document.addEventListener('DOMContentLoaded', function() {
-            const form = document.querySelector('form');
-            if (form) {
-                form.addEventListener('submit', function(e) {
-                    const button = this.querySelector('button[type="submit"]');
-                    if (button) {
-                        button.disabled = true;
-                        button.innerHTML = `
-                            <svg class="w-5 h-5 animate-spin inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                            </svg>
-                            Installing System...
-                        `;
-                    }
-                });
-            }
-        });
-    </script> 
 </body>
 </html>
