@@ -6,6 +6,21 @@ session_start();
 
 require_once __DIR__ . '/src/helpers.php';
 
+$autoloadPath = __DIR__ . '/vendor/autoload.php';
+if (is_file($autoloadPath)) {
+    require_once $autoloadPath;
+} else {
+    $storagePath = __DIR__ . '/src/Storage/JsonFileStorage.php';
+    if (is_file($storagePath)) {
+        require_once $storagePath;
+    }
+
+    $servicePath = __DIR__ . '/src/Service/DashboardService.php';
+    if (is_file($servicePath)) {
+        require_once $servicePath;
+    }
+}
+
 /**
  * Dashboard Routing System - Ultra Clean Black & White Design
  * Slim, Fit, Clean, Modern CSS - Production Ready
@@ -15,58 +30,6 @@ const SUCCESS_MESSAGES = [
     'config_updated' => 'Configuration updated successfully!',
     'url_added' => 'URL added successfully!',
     'countries_updated' => 'Countries updated successfully!',
-];
-
-/**
- * @var array{
- *     system_on: bool,
- *     is_active: bool,
- *     rule_type: string,
- *     mute_duration: int,
- *     unmute_duration: int
- * }
- */
-$config = [
-    'system_on' => false,
-    'is_active' => false,
-    'rule_type' => 'static_route',
-    'mute_duration' => 120,
-    'unmute_duration' => 120,
-];
-
-/**
- * @var list<array{id: int, url: string, weight: int, priority: int, active: bool}>
- */
-$urls = [
-    [
-        'id' => 1,
-        'url' => 'https://example.com',
-        'weight' => 1,
-        'priority' => 1,
-        'active' => true,
-    ],
-    [
-        'id' => 2,
-        'url' => 'https://backup.com',
-        'weight' => 2,
-        'priority' => 2,
-        'active' => true,
-    ],
-];
-
-$countries = [
-    [
-        'code' => 'US',
-        'name' => 'United States',
-    ],
-    [
-        'code' => 'UK',
-        'name' => 'United Kingdom',
-    ],
-    [
-        'code' => 'DE',
-        'name' => 'Germany',
-    ],
 ];
 
 $stats = [
@@ -83,7 +46,22 @@ if ($successKey !== null && $successKey !== '') {
     $successMessage = SUCCESS_MESSAGES[$successKey] ?? 'Operation completed successfully!';
 }
 
+$service = new \SRP\Service\DashboardService();
+$state = \SRP\Service\DashboardService::getDefaultState();
+
+try {
+    $state = $service->getState();
+} catch (\Throwable $exception) {
+    $errorMessage = 'Unable to load persisted dashboard data. Showing default values.';
+}
+
+$config = $state['config'];
+$urls = $state['urls'];
+$countries = $state['countries'];
+
 $csrfToken = getCsrfToken();
+$pendingConfig = null;
+$pendingCountriesInput = null;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $submittedTokenRaw = filter_input(INPUT_POST, 'csrf_token', FILTER_UNSAFE_RAW);
@@ -98,8 +76,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         switch ($action) {
             case 'update_config':
-                header('Location: index.php?success=config_updated');
-                exit;
+                $systemOnPost = filter_has_var(INPUT_POST, 'system_on');
+                $isActivePost = filter_has_var(INPUT_POST, 'is_active');
+                $ruleTypeCandidate = filter_input(INPUT_POST, 'rule_type', FILTER_SANITIZE_SPECIAL_CHARS);
+                $ruleTypeValue = is_string($ruleTypeCandidate) ? $ruleTypeCandidate : '';
+                $muteDurationCandidate = filter_input(
+                    INPUT_POST,
+                    'mute_duration',
+                    FILTER_VALIDATE_INT,
+                    [
+                        'options' => [
+                            'min_range' => 0,
+                            'max_range' => 86400,
+                        ],
+                    ]
+                );
+                $unmuteDurationCandidate = filter_input(
+                    INPUT_POST,
+                    'unmute_duration',
+                    FILTER_VALIDATE_INT,
+                    [
+                        'options' => [
+                            'min_range' => 0,
+                            'max_range' => 86400,
+                        ],
+                    ]
+                );
+
+                $muteDurationValue = is_int($muteDurationCandidate)
+                    ? $muteDurationCandidate
+                    : (int) $config['mute_duration'];
+                $unmuteDurationValue = is_int($unmuteDurationCandidate)
+                    ? $unmuteDurationCandidate
+                    : (int) $config['unmute_duration'];
+
+                $pendingConfig = [
+                    'system_on' => $systemOnPost,
+                    'is_active' => $isActivePost,
+                    'rule_type' => $ruleTypeValue,
+                    'mute_duration' => $muteDurationValue,
+                    'unmute_duration' => $unmuteDurationValue,
+                ];
+
+                if ($muteDurationCandidate === false || $unmuteDurationCandidate === false) {
+                    $errorMessage = 'Please provide valid mute and unmute durations.';
+                    break;
+                }
+
+                try {
+                    $service->updateConfig(
+                        $systemOnPost,
+                        $isActivePost,
+                        $ruleTypeValue,
+                        $muteDurationValue,
+                        $unmuteDurationValue
+                    );
+                    header('Location: index.php?success=config_updated');
+                    return;
+                } catch (\InvalidArgumentException $exception) {
+                    $errorMessage = $exception->getMessage();
+                } catch (\RuntimeException $exception) {
+                    $errorMessage = 'Unable to update configuration. Please try again.';
+                }
+
+                break;
             case 'add_url':
                 $urlValue = filter_input(INPUT_POST, 'url', FILTER_VALIDATE_URL);
                 $weightValue = filter_input(INPUT_POST, 'weight', FILTER_VALIDATE_INT, [
@@ -117,21 +157,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 if ($urlValue === false || $weightValue === false || $priorityValue === false) {
                     $errorMessage = 'Please provide a valid URL, weight, and priority.';
-                } else {
+                    break;
+                }
+
+                try {
+                    $service->addUrl($urlValue, (int) $weightValue, (int) $priorityValue);
                     header('Location: index.php?success=url_added');
-                    exit;
+                    return;
+                } catch (\InvalidArgumentException $exception) {
+                    $errorMessage = $exception->getMessage();
+                } catch (\RuntimeException $exception) {
+                    $errorMessage = 'Unable to add the URL. Please try again.';
                 }
 
                 break;
             case 'update_countries':
                 $countriesRawValue = filter_input(INPUT_POST, 'countries', FILTER_UNSAFE_RAW);
                 $countriesRaw = is_string($countriesRawValue) ? $countriesRawValue : '';
+                $countryCodeCandidates = array_values(array_filter(array_map(
+                    static function (string $code): string {
+                        return strtoupper(trim($code));
+                    },
+                    explode(',', $countriesRaw)
+                )));
+                $pendingCountriesInput = implode(', ', $countryCodeCandidates);
 
-                if (!preg_match('/^\s*[A-Z]{2}(\s*,\s*[A-Z]{2})*\s*$/', $countriesRaw)) {
-                    $errorMessage = 'Please provide valid ISO 3166-1 alpha-2 country codes separated by commas.';
-                } else {
+                try {
+                    $service->updateCountries($countryCodeCandidates);
                     header('Location: index.php?success=countries_updated');
-                    exit;
+                    return;
+                } catch (\InvalidArgumentException $exception) {
+                    $errorMessage = $exception->getMessage();
+                } catch (\RuntimeException $exception) {
+                    $errorMessage = 'Unable to update countries. Please try again.';
                 }
 
                 break;
@@ -142,61 +200,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-$systemOnValue = filter_has_var(INPUT_POST, 'system_on')
-    ? true
-    : $config['system_on'];
-$isActiveValue = filter_has_var(INPUT_POST, 'is_active')
-    ? true
-    : $config['is_active'];
+$configForDisplay = is_array($pendingConfig) ? $pendingConfig : $config;
+/** @var array<string, mixed> $configForDisplay */
 
-$ruleTypeCandidate = filter_input(INPUT_POST, 'rule_type', FILTER_SANITIZE_SPECIAL_CHARS);
-$ruleTypeValue = is_string($ruleTypeCandidate) && in_array(
-    $ruleTypeCandidate,
-    ['static_route', 'random_route', 'mute_unmute'],
-    true
-)
-    ? $ruleTypeCandidate
-    : $config['rule_type'];
+$systemOnValue = $configForDisplay['system_on'] ?? false;
+$systemOn = is_bool($systemOnValue) ? $systemOnValue : (bool) $systemOnValue;
 
-$muteDurationCandidate = filter_input(
-    INPUT_POST,
-    'mute_duration',
-    FILTER_VALIDATE_INT,
-    [
-        'options' => [
-            'min_range' => 0,
-            'max_range' => 86400,
-        ],
-    ]
-);
-$unmuteDurationCandidate = filter_input(
-    INPUT_POST,
-    'unmute_duration',
-    FILTER_VALIDATE_INT,
-    [
-        'options' => [
-            'min_range' => 0,
-            'max_range' => 86400,
-        ],
-    ]
-);
+$isActiveValue = $configForDisplay['is_active'] ?? false;
+$isActive = is_bool($isActiveValue) ? $isActiveValue : (bool) $isActiveValue;
 
-$muteDurationValue = $muteDurationCandidate !== false
-    ? $muteDurationCandidate
-    : (int) $config['mute_duration'];
-$unmuteDurationValue = $unmuteDurationCandidate !== false
-    ? $unmuteDurationCandidate
-    : (int) $config['unmute_duration'];
+$ruleTypeValue = $configForDisplay['rule_type'] ?? 'static_route';
+$ruleType = is_string($ruleTypeValue) && $ruleTypeValue !== '' ? $ruleTypeValue : 'static_route';
 
-$systemOn = (bool) $systemOnValue;
-$isActive = (bool) $isActiveValue;
+$muteDurationValue = $configForDisplay['mute_duration'] ?? 0;
+$muteDurationInt = 0;
+if (is_int($muteDurationValue)) {
+    $muteDurationInt = $muteDurationValue;
+} elseif (is_string($muteDurationValue) && $muteDurationValue !== '') {
+    $muteDurationInt = (int) $muteDurationValue;
+}
+
+$unmuteDurationValue = $configForDisplay['unmute_duration'] ?? 0;
+$unmuteDurationInt = 0;
+if (is_int($unmuteDurationValue)) {
+    $unmuteDurationInt = $unmuteDurationValue;
+} elseif (is_string($unmuteDurationValue) && $unmuteDurationValue !== '') {
+    $unmuteDurationInt = (int) $unmuteDurationValue;
+}
+
+$muteDuration = (string) $muteDurationInt;
+$unmuteDuration = (string) $unmuteDurationInt;
 
 $systemStatus = $systemOn ? 'ON' : 'OFF';
 $activityStatus = $isActive ? 'ACTIVE' : 'IDLE';
-$ruleType = $ruleTypeValue;
-$muteDuration = (string) $muteDurationValue;
-$unmuteDuration = (string) $unmuteDurationValue;
-$countryCodes = implode(', ', array_column($countries, 'code'));
+
+$countryCodes = $pendingCountriesInput ?? implode(', ', array_column($countries, 'code'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
