@@ -5,6 +5,110 @@ declare(strict_types=1);
 use JsonException;
 
 /**
+ * @return array{current_state: string|null, last_toggle_time: string|null}
+ */
+function loadMuteState(): array
+{
+    $defaultState = [
+        'current_state' => null,
+        'last_toggle_time' => null,
+    ];
+
+    $filePath = dirname(__DIR__) . '/storage/mute_state.json';
+
+    if (!is_file($filePath)) {
+        return $defaultState;
+    }
+
+    $contents = file_get_contents($filePath);
+    if ($contents === false) {
+        return $defaultState;
+    }
+
+    try {
+        $data = json_decode($contents, true, 512, JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return $defaultState;
+    }
+
+    if (!is_array($data)) {
+        return $defaultState;
+    }
+
+    $currentState = isset($data['current_state']) && is_string($data['current_state'])
+        ? strtolower($data['current_state'])
+        : null;
+
+    if ($currentState !== null && !in_array($currentState, ['mute', 'unmute', 'normal'], true)) {
+        $currentState = null;
+    }
+
+    $lastToggleTime = isset($data['last_toggle_time']) && is_string($data['last_toggle_time'])
+        ? $data['last_toggle_time']
+        : null;
+
+    if ($lastToggleTime !== null && strtotime($lastToggleTime) === false) {
+        $lastToggleTime = null;
+    }
+
+    return [
+        'current_state' => $currentState,
+        'last_toggle_time' => $lastToggleTime,
+    ];
+}
+
+/**
+ * Persist the mute/unmute state to the shared storage file.
+ */
+function persistMuteState(string $currentState, int $lastToggleTimestamp): void
+{
+    $filePath = dirname(__DIR__) . '/storage/mute_state.json';
+    $directory = dirname($filePath);
+
+    if (!is_dir($directory)) {
+        if (!mkdir($directory, 0755, true) && !is_dir($directory)) {
+            return;
+        }
+    }
+
+    $payload = [
+        'current_state' => $currentState,
+        'last_toggle_time' => date('c', $lastToggleTimestamp),
+    ];
+
+    try {
+        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_THROW_ON_ERROR);
+    } catch (JsonException) {
+        return;
+    }
+
+    $handle = fopen($filePath, 'c+');
+    if ($handle === false) {
+        return;
+    }
+
+    try {
+        if (!flock($handle, LOCK_EX)) {
+            return;
+        }
+
+        if (!ftruncate($handle, 0) || fseek($handle, 0) !== 0) {
+            return;
+        }
+
+        $bytesWritten = fwrite($handle, $encoded);
+        if ($bytesWritten === false || $bytesWritten < strlen($encoded)) {
+            return;
+        }
+
+        fflush($handle);
+    } finally {
+        flock($handle, LOCK_UN);
+        fclose($handle);
+    }
+}
+
+/**
  * Main Routing Decision API
  * High-Performance Mobile-Optimized Endpoint
  */
@@ -114,6 +218,16 @@ $systemConfig = [
     'current_state' => 'normal',
     'last_toggle_time' => null,
 ];
+
+$storedMuteState = loadMuteState();
+
+if ($storedMuteState['current_state'] !== null) {
+    $systemConfig['current_state'] = $storedMuteState['current_state'];
+}
+
+if ($storedMuteState['last_toggle_time'] !== null) {
+    $systemConfig['last_toggle_time'] = $storedMuteState['last_toggle_time'];
+}
 
 $targetUrls = [
     ['url' => 'https://example.com', 'weight' => 5, 'priority' => 1, 'active' => true],
@@ -283,6 +397,9 @@ switch ($systemConfig['rule_type']) {
         if ($lastToggle === false || $lastToggle === null) {
             $currentState = 'unmute';
             $lastToggle = $now;
+            $systemConfig['current_state'] = $currentState;
+            $systemConfig['last_toggle_time'] = date('c', $lastToggle);
+            persistMuteState($currentState, $lastToggle);
         }
 
         $duration = $currentState === 'mute'
@@ -291,6 +408,10 @@ switch ($systemConfig['rule_type']) {
 
         if (($now - $lastToggle) >= $duration) {
             $currentState = $currentState === 'mute' ? 'unmute' : 'mute';
+            $lastToggle = $now;
+            $systemConfig['current_state'] = $currentState;
+            $systemConfig['last_toggle_time'] = date('c', $lastToggle);
+            persistMuteState($currentState, $lastToggle);
         }
 
         if ($currentState === 'unmute') {
