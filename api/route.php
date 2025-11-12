@@ -20,9 +20,23 @@ function loadMuteState(): array
         return $defaultState;
     }
 
-    $contents = file_get_contents($filePath);
-    if ($contents === false) {
+    $handle = fopen($filePath, 'rb');
+    if ($handle === false) {
         return $defaultState;
+    }
+
+    try {
+        if (!flock($handle, LOCK_SH)) {
+            return $defaultState;
+        }
+
+        $contents = stream_get_contents($handle);
+        if ($contents === false) {
+            return $defaultState;
+        }
+    } finally {
+        flock($handle, LOCK_UN);
+        fclose($handle);
     }
 
     try {
